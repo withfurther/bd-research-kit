@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Backup existing ~/.claude/ config before modifications
-set -euo pipefail
+set -eo pipefail
 
 CLAUDE_DIR="${HOME}/.claude"
 BACKUP_DIR="${CLAUDE_DIR}/backups/bd-kit-$(date +%Y%m%d-%H%M%S)"

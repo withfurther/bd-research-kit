@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # File installation and conflict resolution
-set -euo pipefail
+set -eo pipefail
 
 CLAUDE_DIR="${HOME}/.claude"
 INTERACTIVE="${INTERACTIVE:-true}"

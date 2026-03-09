@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook — blocks destructive bash commands
 # Exit 0 = allow, exit 2 = block
-set -euo pipefail
+set -eo pipefail
 
 input=$(cat)
 

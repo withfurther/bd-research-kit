@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Notification hook — native OS notification when Claude needs attention
-set -euo pipefail
+set -eo pipefail
 
 input=$(cat)
 type=$(echo "$input" | jq -r '.type // "unknown"')

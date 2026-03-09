@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bd-research-kit setup — install Claude Code configuration for BD partnership research
 # Usage: ./setup.sh [--non-interactive]
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
@@ -9,7 +9,7 @@ KIT_VERSION=$(jq -r '.version' "$SCRIPT_DIR/manifest.json")
 
 # Parse arguments
 INTERACTIVE=true
-for arg in "$@"; do
+for arg in "${@+"$@"}"; do
   case "$arg" in
     --non-interactive) INTERACTIVE=false ;;
     --help|-h)
