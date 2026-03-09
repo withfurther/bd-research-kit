@@ -1,0 +1,21 @@
+[
+  "node_modules/",
+  ".git/",
+  "dist/",
+  ".next/",
+  "*.min.js",
+  "*.min.css",
+  "*.map",
+  ".env",
+  ".env.*",
+  "*.lock",
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  ".DS_Store",
+  "Thumbs.db",
+  "__pycache__/",
+  "*.pyc",
+  ".venv/",
+  "*.log"
+]

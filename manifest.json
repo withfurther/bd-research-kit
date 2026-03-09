@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "name": "bd-research-kit",
+  "description": "Claude Code setup optimized for BD partnership research",
+
+  "files": [
+    {"src": "rules/bd-research.md", "dest": "rules/bd-research.md"},
+    {"src": "rules/security.md", "dest": "rules/security.md"},
+    {"src": "skills/research-company/SKILL.md", "dest": "skills/research-company/SKILL.md"},
+    {"src": "skills/research-partnership/SKILL.md", "dest": "skills/research-partnership/SKILL.md"},
+    {"src": "skills/competitive-landscape/SKILL.md", "dest": "skills/competitive-landscape/SKILL.md"},
+    {"src": "skills/partnership-memo/SKILL.md", "dest": "skills/partnership-memo/SKILL.md"},
+    {"src": "skills/market-scan/SKILL.md", "dest": "skills/market-scan/SKILL.md"},
+    {"src": "agents/bd-researcher.md", "dest": "agents/bd-researcher.md"},
+    {"src": "output-styles/executive.md", "dest": "output-styles/executive.md"},
+    {"src": "hooks/notify.sh", "dest": "hooks/notify.sh", "mode": "755"},
+    {"src": "hooks/block-dangerous.sh", "dest": "hooks/block-dangerous.sh", "mode": "755"}
+  ],
+
+  "settings_files": {
+    "deny_rules": "settings/deny-rules.json",
+    "allow_rules": "settings/allow-rules.json",
+    "ignore_patterns": "settings/ignore-patterns.json",
+    "preferences": "settings/preferences.json"
+  },
+
+  "hooks_config": {
+    "Notification": [{"hooks": [{"type": "command", "command": "~/.claude/hooks/notify.sh", "timeout": 5}]}],
+    "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "~/.claude/hooks/block-dangerous.sh", "timeout": 5}]}]
+  },
+
+  "plugins": {
+    "marketplaces": [
+      "anthropics/claude-plugins-official",
+      "anthropics/knowledge-work-plugins",
+      "anthropics/skills"
+    ],
+    "recommended": [
+      {"name": "security-guidance", "marketplace": "claude-plugins-official", "enabled": true},
+      {"name": "document-skills", "marketplace": "anthropic-agent-skills", "enabled": true},
+      {"name": "commit-commands", "marketplace": "claude-plugins-official", "enabled": true},
+      {"name": "claude-md-management", "marketplace": "claude-plugins-official", "enabled": true},
+      {"name": "productivity", "marketplace": "knowledge-work-plugins", "enabled": false},
+      {"name": "sales", "marketplace": "knowledge-work-plugins", "enabled": false},
+      {"name": "enterprise-search", "marketplace": "knowledge-work-plugins", "enabled": false}
+    ]
+  }
+}

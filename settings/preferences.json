@@ -1,0 +1,6 @@
+{
+  "outputStyle": "executive",
+  "effortLevel": "high",
+  "respectGitignore": true,
+  "cleanupPeriodDays": 30
+}
