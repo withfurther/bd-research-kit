@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Notification hook — native OS notification when Claude needs attention
-set -eo pipefail
+# Claude Code notification hook — cross-platform native notification
+# Fires on Notification events (permission prompts, idle, auth)
+# Input: JSON on stdin with notification details
+set -euo pipefail
 
 input=$(cat)
 type=$(echo "$input" | jq -r '.type // "unknown"')
@@ -14,9 +16,13 @@ case "$type" in
     title="Claude Code — Waiting"
     msg="Claude is waiting for input"
     ;;
+  auth_success)
+    title="Claude Code — Authenticated"
+    msg="Authentication completed successfully"
+    ;;
   task_completed)
-    title="Claude Code — Research Complete"
-    msg="Your research task has finished"
+    title="Claude Code — Task Complete"
+    msg="A background task has finished"
     ;;
   stop)
     title="Claude Code — Done"
@@ -30,9 +36,12 @@ esac
 
 # Cross-platform notification
 if [[ "$OSTYPE" == "darwin"* ]]; then
+  # macOS — use osascript
   osascript -e "display notification \"$msg\" with title \"$title\" sound name \"Funk\"" 2>/dev/null || true
 elif command -v notify-send &>/dev/null; then
+  # Linux with libnotify (GNOME, KDE, etc.)
   notify-send "$title" "$msg" 2>/dev/null || true
 else
+  # Fallback — print to stderr so the user sees it
   echo "[$title] $msg" >&2
 fi

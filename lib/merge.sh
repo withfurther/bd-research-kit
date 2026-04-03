@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # File installation and conflict resolution
-set -eo pipefail
+set -euo pipefail
 
 CLAUDE_DIR="${HOME}/.claude"
 INTERACTIVE="${INTERACTIVE:-true}"
@@ -15,13 +15,13 @@ install_file() {
   if [[ -f "$dest_full" ]]; then
     # File exists — check if identical
     if diff -q "$src" "$dest_full" &>/dev/null; then
-      echo "  o Unchanged: $dest"
+      echo "  ○ Unchanged: $dest"
       return 0
     fi
 
     if [[ "$INTERACTIVE" == "true" ]]; then
       echo ""
-      echo "  ! Conflict: $dest already exists with different content"
+      echo "  ⚠ Conflict: $dest already exists with different content"
       echo "  [o]verwrite / [s]kip / [d]iff"
       read -rp "  Choice: " choice
       case "$choice" in
@@ -31,17 +31,21 @@ install_file() {
           read -rp "  Overwrite? [y/n]: " confirm
           [[ "$confirm" != "y" && "$confirm" != "Y" ]] && return 0
           ;;
-        *) echo "  > Skipped: $dest"; return 0 ;;
+        *) echo "  → Skipped: $dest"; return 0 ;;
       esac
     else
-      echo "  > Skipped (conflict): $dest"
+      echo "  → Skipped (conflict): $dest"
       return 0
     fi
   fi
 
   cp "$src" "$dest_full"
   chmod "$mode" "$dest_full"
-  echo "  + Installed: $dest"
+  echo "  ✓ Installed: $dest"
+}
+
+install_hook() {
+  install_file "$1" "$2" "755"
 }
 
 merge_settings() {
@@ -51,20 +55,20 @@ merge_settings() {
   if [[ ! -f "$target" ]]; then
     # No existing settings — use kit settings as base
     cp "$kit_settings" "$target"
-    echo "  + Created settings.json"
+    echo "  ✓ Created settings.json"
     return 0
   fi
 
-  # Merge using jq
+  # Merge using jq — SCRIPT_DIR comes from setup.sh
   local jq_script="${SCRIPT_DIR:-$(dirname "$0")}/lib/merge-settings.jq"
   local merged
   merged=$(jq -s -f "$jq_script" "$target" "$kit_settings")
 
   if [[ -n "$merged" ]]; then
     echo "$merged" | jq '.' > "$target"
-    echo "  + Merged settings.json (existing values preserved)"
+    echo "  ✓ Merged settings.json"
   else
-    echo "  x Failed to merge settings.json"
+    echo "  ✗ Failed to merge settings.json"
     return 1
   fi
 }
