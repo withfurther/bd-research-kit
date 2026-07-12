@@ -22,7 +22,13 @@ Sets up Claude Code with everything you need to research potential partners, eva
 - **Executive output style** — Business-friendly formatting (bullets, tables, quantified)
 - **bd-researcher agent** — Autonomous deep research for multi-step investigations
 - **Security rules** — Prevents leaking secrets or sensitive partner info
-- **Safety hooks** — Blocks destructive commands, sends native notifications
+- **Safety hooks** — Blocks destructive commands, sends native notifications. The
+  `block-dangerous.sh` command classifier is synced **verbatim from the `claude-code-kit`
+  canonical hook** (command-position aware — blocks a destructive command in any execution
+  position while allowing it as quoted data; ships with its sibling `block-dangerous.py`
+  parser and degrades to a pure-bash matcher when `python3` is absent). This kit no longer
+  carries its own diverged copy — the canonical suite (1050 cases) is exercised by the
+  `claude-code-kit` CI, so the hook is not re-tested here.
 - **Pre-approved permissions** — Perplexity, Firecrawl, Google Workspace, Document Tools
 
 ## Prerequisites
@@ -113,7 +119,7 @@ The installer safely merges — your existing settings and customizations are pr
 | `~/.claude/skills/` | 5 skill directories |
 | `~/.claude/agents/` | `bd-researcher.md` |
 | `~/.claude/output-styles/` | `executive.md` |
-| `~/.claude/hooks/` | `notify.sh`, `block-dangerous.sh` |
+| `~/.claude/hooks/` | `notify.sh`, `block-dangerous.sh` + `block-dangerous.py` (installed as a pair) |
 | `~/.claude/settings.json` | Merged permissions, hooks, plugins, preferences |
 | `~/.claude/bd-kit.json` | Install tracking (version, timestamp) |
 
