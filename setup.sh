@@ -184,7 +184,9 @@ done
 # Check agent
 [[ -f "$CLAUDE_DIR/agents/bd-researcher.md" ]] && pass "Agent: bd-researcher" || fail_check "Agent missing: bd-researcher"
 
-# Check hooks are executable
+# Check hooks are executable. block-dangerous.sh resolves its sibling parser module
+# block-dangerous.py next to itself and DENIES past the danger trigger if it is missing —
+# so both files must install as a pair, not just the .sh.
 for hook in notify.sh block-dangerous.sh; do
   if [[ -f "$CLAUDE_DIR/hooks/$hook" && -x "$CLAUDE_DIR/hooks/$hook" ]]; then
     pass "Hook: $hook (executable)"
@@ -192,6 +194,11 @@ for hook in notify.sh block-dangerous.sh; do
     fail_check "Hook issue: $hook"
   fi
 done
+if [[ -f "$CLAUDE_DIR/hooks/block-dangerous.py" ]]; then
+  pass "Hook parser: block-dangerous.py (sibling module present)"
+else
+  fail_check "Hook parser missing: block-dangerous.py (block-dangerous.sh would deny every risky command)"
+fi
 
 echo ""
 echo "  Validation: $PASS passed, $FAIL failed"

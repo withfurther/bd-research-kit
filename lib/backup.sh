@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Backup existing ~/.claude/ config before modifications
-set -eo pipefail
+set -euo pipefail
 
 CLAUDE_DIR="${HOME}/.claude"
 BACKUP_DIR="${CLAUDE_DIR}/backups/bd-kit-$(date +%Y%m%d-%H%M%S)"
 
 create_backup() {
   if [[ ! -d "$CLAUDE_DIR" ]]; then
-    echo "  i No existing ~/.claude/ directory — skip backup"
-    echo "skip"
+    echo "  ℹ No existing ~/.claude/ directory — skip backup"
     return 0
   fi
 
@@ -24,6 +23,13 @@ create_backup() {
     fi
   done
 
-  echo "  + Backup created at $BACKUP_DIR"
+  # Backup keybindings
+  [[ -f "$CLAUDE_DIR/keybindings.json" ]] && cp "$CLAUDE_DIR/keybindings.json" "$BACKUP_DIR/"
+
+  # Backup statusline and file-suggestion
+  [[ -f "$CLAUDE_DIR/statusline-command.sh" ]] && cp "$CLAUDE_DIR/statusline-command.sh" "$BACKUP_DIR/"
+  [[ -f "$CLAUDE_DIR/file-suggestion.sh" ]] && cp "$CLAUDE_DIR/file-suggestion.sh" "$BACKUP_DIR/"
+
+  echo "  ✓ Backup created at $BACKUP_DIR"
   echo "$BACKUP_DIR"
 }

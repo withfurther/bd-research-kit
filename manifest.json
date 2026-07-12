@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "bd-research-kit",
   "description": "Claude Code setup optimized for BD partnership research",
 
@@ -14,7 +14,8 @@
     {"src": "agents/bd-researcher.md", "dest": "agents/bd-researcher.md"},
     {"src": "output-styles/executive.md", "dest": "output-styles/executive.md"},
     {"src": "hooks/notify.sh", "dest": "hooks/notify.sh", "mode": "755"},
-    {"src": "hooks/block-dangerous.sh", "dest": "hooks/block-dangerous.sh", "mode": "755"}
+    {"src": "hooks/block-dangerous.sh", "dest": "hooks/block-dangerous.sh", "mode": "755"},
+    {"src": "hooks/block-dangerous.py", "dest": "hooks/block-dangerous.py", "mode": "755"}
   ],
 
   "settings_files": {
