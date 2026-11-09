@@ -25,10 +25,14 @@ Sets up Claude Code with everything you need to research potential partners, eva
 - **Safety hooks** — Blocks destructive commands, sends native notifications. The
   `block-dangerous.sh` command classifier is synced **verbatim from the `claude-code-kit`
   canonical hook** (command-position aware — blocks a destructive command in any execution
-  position while allowing it as quoted data; ships with its sibling `block-dangerous.py`
-  parser and degrades to a pure-bash matcher when `python3` is absent). This kit no longer
-  carries its own diverged copy — the canonical suite (1050 cases) is exercised by the
-  `claude-code-kit` CI, so the hook is not re-tested here.
+  position while allowing it as quoted data). The hook, sibling `block-dangerous.py`
+  parser and `lib/python-path.sh` runtime helper match published commit
+  `f10b21e631abe984bc995901d15d87cae3fa295b`. The helper selects the user-level
+  pyenv interpreter from the trusted installation home, ignoring repository and
+  inherited interpreter overrides. Without that interpreter, the hook uses its
+  conservative shell matcher; malformed input is denied. The canonical suite
+  (1050 cases) runs in `claude-code-kit` CI. This kit additionally tests actual
+  installation, helper packaging, malformed input and hostile runtime environments.
 - **Pre-approved permissions** — Perplexity, Firecrawl, Google Workspace, Document Tools
 
 ## Prerequisites
@@ -119,9 +123,18 @@ The installer safely merges — your existing settings and customizations are pr
 | `~/.claude/skills/` | 5 skill directories |
 | `~/.claude/agents/` | `bd-researcher.md` |
 | `~/.claude/output-styles/` | `executive.md` |
-| `~/.claude/hooks/` | `notify.sh`, `block-dangerous.sh` + `block-dangerous.py` (installed as a pair) |
+| `~/.claude/hooks/` | `notify.sh`, `block-dangerous.sh`, `block-dangerous.py`, `lib/python-path.sh` |
 | `~/.claude/settings.json` | Merged permissions, hooks, plugins, preferences |
 | `~/.claude/bd-kit.json` | Install tracking (version, timestamp) |
+
+## Development validation
+
+Run `python3 test/test_hook_installation.py` from the checkout. The tests run the
+real setup script only against disposable homes with inert CLI prerequisites;
+they do not install into the operator's home or contact external services.
+Installation validation failures return nonzero before writing a success record.
+Keep the mirrored hook, parser and helper synchronized with their published
+`claude-code-kit` source rather than patching the classifier independently.
 
 ## Uninstalling
 
