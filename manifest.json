@@ -15,7 +15,8 @@
     {"src": "output-styles/executive.md", "dest": "output-styles/executive.md"},
     {"src": "hooks/notify.sh", "dest": "hooks/notify.sh", "mode": "755"},
     {"src": "hooks/block-dangerous.sh", "dest": "hooks/block-dangerous.sh", "mode": "755"},
-    {"src": "hooks/block-dangerous.py", "dest": "hooks/block-dangerous.py", "mode": "755"}
+    {"src": "hooks/block-dangerous.py", "dest": "hooks/block-dangerous.py", "mode": "755"},
+    {"src": "hooks/lib/python-path.sh", "dest": "hooks/lib/python-path.sh", "mode": "644"}
   ],
 
   "settings_files": {

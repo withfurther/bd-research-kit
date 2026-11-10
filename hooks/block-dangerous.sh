@@ -1,4 +1,27 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
+
+# Bypass the pyenv shim (kalloc leak): macOS leaks a wired 1 KB kernel buffer on every `#!` exec
+# whose parent is itself a `#!` script. `python3` here is a pyenv shim that execs ~8 more scripts
+# — ~15-21 KB per call, reclaimed only by reboot. See lib/python-path.sh.
+#
+# CC_PYTHON is a trust anchor this hook EXECUTES and trusts the output of, so any INHERITED value
+# must be destroyed BEFORE the lib is sourced. Sourcing fails open (`|| true`), and if an inherited
+# CC_PYTHON survived that failure an attacker-supplied executable would become the interpreter —
+# which bypassed block-production-push.sh outright (its probe returned empty => "no push detected").
+# Clearing here makes the handoff safe: only the resolver or fixed OS fallback below may set it.
+CC_PYTHON=
+# Developer shims and CPython prefix selectors act before isolated initialization.
+unset DEVELOPER_DIR SDKROOT TOOLCHAINS PYTHONEXECUTABLE __PYVENV_LAUNCHER__
+_cc_self="${BASH_SOURCE[0]}"
+case "$_cc_self" in */*) ;; *) _cc_self="./$_cc_self" ;; esac
+_cc_pypath="${_cc_self%/*}/lib/python-path.sh"
+[ -r "$_cc_pypath" ] && . "$_cc_pypath" || true
+unset _cc_pypath _cc_self
+# This classifier uses only the standard library. A fixed OS interpreter is a
+# trusted alternative when the user's global pyenv runtime is unavailable.
+if ! [ -x "${CC_PYTHON:-}" ] && [ -x /usr/bin/python3 ]; then
+  CC_PYTHON=/usr/bin/python3
+fi
 # Claude Code PreToolUse hook — blocks destructive bash commands
 # Exit 0 = allow, exit 2 = block
 #
@@ -11,48 +34,45 @@
 # Fail-safe by construction. Three outcomes from the parser:
 #   BLOCK    — a dangerous command was found in command position (or nesting exceeded the budget)
 #   ALLOW    — parsed cleanly, nothing dangerous in command position
-#   FALLBACK — could not parse (unbalanced quotes, shlex error, python3 absent); the legacy
+#   FALLBACK — could not parse (unbalanced quotes, shlex error); the legacy
 #              strip-and-match matcher decides, preserving the old over-blocking behavior
 set -euo pipefail
 
-input=$(cat)
+input=$(/bin/cat)
 
 deny() {
-  cat <<HOOKEOF
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by safety hook: destructive command pattern detected"}}
-HOOKEOF
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by safety hook: destructive command pattern detected"}}'
   exit 2
 }
 
+# Only installed tool prefixes may supply jq. Core utilities use the system
+# search path; repository PATH entries and imported functions are not authorities.
+_cc_jq=
+for _cc_candidate in /opt/homebrew/bin/jq /usr/local/bin/jq /usr/bin/jq; do
+  if [[ -x "$_cc_candidate" ]]; then
+    _cc_jq=$_cc_candidate
+    break
+  fi
+done
 command_str=""
-if command -v jq &>/dev/null; then
-  command_str=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null) || true
-elif command -v python3 &>/dev/null; then
+if [[ -n "$_cc_jq" ]]; then
+  command_str=$(printf '%s' "$input" | "$_cc_jq" -rs 'if length == 1 then .[0].tool_input.command | if type == "string" then . else error("command required") end else error("one command payload required") end' 2>/dev/null) || deny
+elif [ -x "${CC_PYTHON:-}" ]; then
   # jq absent but python3 (the parser's OWN dependency) is present — parse the JSON properly so an
   # ESCAPED quote in the value is not truncated. `grep -o '"command":"[^"]*"'` stopped at the first
   # \" and extracted `rm -rf \` for `rm -rf "$HOME"`, exiting 0 on a supported fallback (Codex #26 r38 F1).
-  command_str=$(printf '%s' "$input" | python3 -c 'import json, sys
+  command_str=$(printf '%s' "$input" | "$CC_PYTHON" -I -S -B -c 'import json, sys
 try:
-    sys.stdout.write(json.load(sys.stdin).get("tool_input", {}).get("command", "") or "")
-except Exception:
-    pass' 2>/dev/null) || true
+    command = json.load(sys.stdin)["tool_input"]["command"]
+    if not isinstance(command, str):
+        raise ValueError("command required")
+    sys.stdout.write(command)
+except (ValueError, KeyError, TypeError):
+    sys.exit(1)' 2>/dev/null) || deny
 else
-  # Doubly-degraded host (no jq AND no python3): only the legacy text matcher can run. A JSON string
-  # body is (non-quote-non-backslash | backslash-escape)*; `sed -nE` (ERE — `|` works on stock BSD and
-  # GNU sed, unlike BRE) captures that, so an escaped quote no longer truncates the command. Optional
-  # whitespace around the `:` is tolerated. Then unescape the common \" and \\ so the matcher sees the
-  # effective text (best-effort; the legacy matcher over-blocks anyway).
-  #
-  # A TRIPLY-degraded host (also no `sed` or `head`) cannot extract the command AT ALL, and cannot run
-  # the parser — the `|| true` would leave command_str empty and the empty-check below would exit 0 on
-  # an unseen `rm -rf /`. There is no way to verify safety, so fail CLOSED (Codex #26 r63 F1).
-  if ! { command -v sed && command -v head; } &>/dev/null; then
-    deny
-  fi
-  command_str=$(printf '%s' "$input" \
-    | sed -nE 's/.*"command"[[:space:]]*:[[:space:]]*"(([^"\]|\\.)*)".*/\1/p' | head -1) || true
-  command_str=${command_str//\\\"/\"}
-  command_str=${command_str//\\\\/\\}
+  # Without a JSON decoder, shell extraction cannot distinguish malformed input
+  # from a valid empty command. Refuse until jq or trusted Python is restored.
+  deny
 fi
 
 if [[ -z "$command_str" ]]; then
@@ -67,7 +87,7 @@ fi
 legacy_rm_split() {
   local text="$1" i j n base w has_r has_f
   text=${text//\\/}; text=${text//\'/}; text=${text//\"/}
-  text=$(printf '%s' "$text" | sed 's/[;&|]/ & /g')
+  text=$(printf '%s' "$text" | command -p sed 's/[;&|]/ & /g')
   local -a words
   set -f
   # shellcheck disable=SC2206
@@ -116,14 +136,14 @@ legacy_is_dangerous() {
   # while fixing Codex #26 r31 F1 in the parser). Requiring no `#` before the `<<` keeps a real
   # heredoc stripped while leaving a commented one alone. `echo "# x" <<EOF` then over-blocks, which
   # is this matcher's documented direction.
-  stripped=$(printf '%s' "$text" | sed '/^[^#]*<<['"'"']\{0,1\}[A-Za-z_]*['"'"']\{0,1\}/,/^[A-Za-z_]\{1,\}$/d')
+  stripped=$(printf '%s' "$text" | command -p sed '/^[^#]*<<['"'"']\{0,1\}[A-Za-z_]*['"'"']\{0,1\}/,/^[A-Za-z_]\{1,\}$/d')
   # Bash's own quote removal (`r\m`, `$'rm'`, `"rm"` all resolve to `rm`) is one CANDIDATE spelling,
   # not the only one: deleting backslashes also destroys a boundary the patterns depend on, so
   # `printf 'rm -rf /\n' | bash` collapsed to `rm -rf /n` and `/([^a-zA-Z]|$)` stopped matching
   # (Codex #26 r15 F2, root cause). Test BOTH spellings and block if EITHER matches — the union
   # keeps this matcher no weaker than the unanchored one it inherits from.
-  quoteless=$(printf '%s' "$stripped" | sed "s/['\"]//g")
-  unescaped=$(printf '%s' "$stripped" | sed -e 's/\\//g' -e "s/\$'/'/g" -e "s/['\"]//g")
+  quoteless=$(printf '%s' "$stripped" | command -p sed "s/['\"]//g")
+  unescaped=$(printf '%s' "$stripped" | command -p sed -e 's/\\//g' -e "s/\$'/'/g" -e "s/['\"]//g")
   local legacy_patterns=(
     'rm\s+-rf\s+/([^a-zA-Z]|$)'
     # A run of `/.`/`/..` dot-segments before a glob normalizes back to the same home/cwd wipe
@@ -158,8 +178,8 @@ legacy_is_dangerous() {
     'wget\s+.*\|\s*(sh|bash|zsh)'
   )
   joined=$(IFS='|'; echo "${legacy_patterns[*]}")
-  printf '%s' "$quoteless" | grep -qEi "$joined" 2>/dev/null && return 0
-  printf '%s' "$unescaped" | grep -qEi "$joined" 2>/dev/null && return 0
+  printf '%s' "$quoteless" | command -p grep -qEi "$joined" 2>/dev/null && return 0
+  printf '%s' "$unescaped" | command -p grep -qEi "$joined" 2>/dev/null && return 0
   # A heredoc body fed to a SHELL is a SCRIPT, so `bash <<EOF … rm -rf / … EOF` is dangerous even
   # though the strip above removed it as if it were data — the parser catches this, so the no-python
   # fallback must too (Codex #26 r52 F2). Re-scan the body of any heredoc whose INTRODUCER line
@@ -178,8 +198,8 @@ legacy_is_dangerous() {
         _cand="$_line"
         if [[ -n "$_dash" ]]; then while [[ "$_cand" == $'\t'* ]]; do _cand="${_cand#$'\t'}"; done; fi
         if [[ "$_cand" == "$_delim" ]]; then
-          _q=$(printf '%s' "$_body" | sed "s/['\"]//g")
-          printf '%s' "$_q" | grep -qEi "$joined" 2>/dev/null && return 0
+          _q=$(printf '%s' "$_body" | command -p sed "s/['\"]//g")
+          printf '%s' "$_q" | command -p grep -qEi "$joined" 2>/dev/null && return 0
           legacy_rm_split "$_q" && return 0
           _in=0; _body=""
           continue
@@ -191,7 +211,7 @@ legacy_is_dangerous() {
         _dash="${BASH_REMATCH[1]}"; _delim="${BASH_REMATCH[2]}"     # capture BEFORE the next =~ clobbers it
         if [[ "$_line" =~ $_intro_re ]]; then _in=1; _body=""; fi
       fi
-    done <<< "$text"
+    done < <(printf '%s\n' "$text")
   fi
   # Scan the heredoc-STRIPPED text so a heredoc body that is data (to `cat`/`echo`) is not matched,
   # matching the grep above which runs on `stripped` (Codex #26 r15c).
@@ -316,7 +336,7 @@ fi
 # parser BLOCKs them, but the immediate-`| shell` clause above missed them: a trigger-invariant break
 # (Codex #26 r39 F1). Admit a shell that appears anywhere in the SAME pipeline stage after the pipe
 # (one-or-more non-pipe chars then whitespace then the shell). Over-triggering only costs a python run
-# (`| grep bash` parses then ALLOWs); `| grep foo` has no shell word and does not trigger.
+# (`| command -p grep bash` parses then ALLOWs); `| command -p grep foo` has no shell word and does not trigger.
 if (( ! _triggered )) \
     && [[ $trigger_text =~ \|[^|]+[[:space:]]([A-Za-z_/.-]*/)?(sh|bash|zsh|dash|ksh)([^[:alnum:]]|$) ]]; then
   _triggered=1
@@ -356,23 +376,13 @@ fi
 # denying is the only safe answer — silently allowing was the pre-existing behavior and it let a
 # `rm -rf /` through on a host missing sed or grep. Benign commands never reach here.
 matcher_available() {
-  command -v sed &>/dev/null && command -v grep &>/dev/null
+  command -pv sed &>/dev/null && command -pv grep &>/dev/null
 }
 
-if ! command -v python3 &>/dev/null; then
-  matcher_available || deny
-  # find's `-delete`/`-exec` actions are PARSER-ONLY — the legacy matcher has no find model and cannot
-  # substitute a search path into the action, so `find / -delete` would exit 0 on a python-absent host
-  # (Codex #26 r63 F2). Conservatively deny a find carrying such an action alongside an absolute/home/
-  # `$PWD` search path; a purely cwd-relative find (`find . -delete`) is left to the legacy matcher.
-  # Over-blocking an ordinary absolute path is the fail-safe on the degraded path.
-  if [[ $command_str =~ (^|[^[:alnum:]./])(find|gfind)[[:space:]] ]] \
-     && [[ $command_str =~ [[:space:]](-delete|-exec|-execdir|-ok|-okdir)([[:space:]]|$) ]] \
-     && [[ $command_str =~ (^|[[:space:]])(/|~|\$\{?HOME|\$\{?PWD|\$\{?OLDPWD) ]]; then
-    deny
-  fi
-  legacy_is_dangerous "$command_str" 1 && deny   # 1 → re-scan shell-fed heredocs (no parser here)
-  exit 0
+if ! [ -x "${CC_PYTHON:-}" ]; then
+  # Dynamic command words and assembled shell input require the full parser.
+  # The legacy matcher cannot safely substitute for an unavailable runtime.
+  deny
 fi
 
 # The parser is a sibling MODULE, not a heredoc: its source is ~67KB, which exceeds the pipe buffer,
@@ -396,14 +406,15 @@ if [[ ! -r $_parser ]]; then
   deny
 fi
 
-verdict=$(printf '%s' "$command_str" | python3 "$_parser" 2>/dev/null) || verdict="FALLBACK"
+verdict=$(printf '%s' "$command_str" | "$CC_PYTHON" -I -S -B "$_parser" 2>/dev/null) || deny
 
 case "$verdict" in
   BLOCK) deny ;;
   ALLOW) exit 0 ;;
-  *)
+  FALLBACK)
     matcher_available || deny
     legacy_is_dangerous "$command_str" && deny
     exit 0
     ;;
+  *) deny ;;
 esac

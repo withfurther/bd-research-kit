@@ -200,8 +200,18 @@ else
   fail_check "Hook parser missing: block-dangerous.py (block-dangerous.sh would deny every risky command)"
 fi
 
+if [[ -f "$CLAUDE_DIR/hooks/lib/python-path.sh" && -r "$CLAUDE_DIR/hooks/lib/python-path.sh" ]]; then
+  pass "Hook runtime helper: lib/python-path.sh (readable)"
+else
+  fail_check "Hook runtime helper missing or unreadable: lib/python-path.sh"
+fi
+
 echo ""
 echo "  Validation: $PASS passed, $FAIL failed"
+if (( FAIL > 0 )); then
+  error "Installation validation failed; no success tracking record was written."
+  exit 1
+fi
 
 # ============================================================
 # Phase 6: Write tracking file + Summary
