@@ -27,10 +27,12 @@ Sets up Claude Code with everything you need to research potential partners, eva
   canonical hook** (command-position aware — blocks a destructive command in any execution
   position while allowing it as quoted data). The hook, sibling `block-dangerous.py`
   parser and `lib/python-path.sh` runtime helper match published commit
-  `f10b21e631abe984bc995901d15d87cae3fa295b`. The helper selects the user-level
+  `91a9091190139e2e57cfabf588a33678695d946a`. The helper selects the user-level
   pyenv interpreter from the trusted installation home, ignoring repository and
-  inherited interpreter overrides. Without that interpreter, the hook uses its
-  conservative shell matcher; malformed input is denied. The canonical suite
+  inherited interpreter overrides. Without that interpreter, the hook uses fixed
+  OS Python; if neither is available, triggered commands are denied. Python runs
+  without site initialization, and developer-tool and executable-prefix selectors
+  are cleared before startup. Malformed input is denied. The canonical suite
   (1050 cases) runs in `claude-code-kit` CI. This kit additionally tests actual
   installation, helper packaging, malformed input and hostile runtime environments.
 - **Pre-approved permissions** — Perplexity, Firecrawl, Google Workspace, Document Tools

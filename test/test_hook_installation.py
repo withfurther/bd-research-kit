@@ -56,7 +56,7 @@ class HookInstallationTest(unittest.TestCase):
     def test_installs_exact_published_dependency_set(self):
         self.installed()
         expected = {
-            "block-dangerous.sh": ("756788c05ca014e82ee67bf5c390e82e18d5d85d4ea8355fa6524d5cb4a60ad4", 0o755),
+            "block-dangerous.sh": ("c4a3bab917a9707f88e92ab9a381dcbcc2ee73e8ab4f5fb387d26b967f738081", 0o755),
             "block-dangerous.py": ("1ac3b6da09f259e95244a2a4906ef9ab671a040d136c4700c972780afcdd288b", 0o755),
         }
         for name, (digest, mode) in expected.items():
@@ -117,11 +117,28 @@ class HookInstallationTest(unittest.TestCase):
         self.assertEqual(self.invoke(command="rm -rf /").returncode, 2)
         self.assertEqual(self.invoke(command="printf harmless").returncode, 0)
 
-    def test_no_trusted_python_uses_conservative_fallback(self):
+    def test_missing_global_python_uses_os_parser(self):
         self.installed()
         self.assertEqual(self.invoke(command="rm -rf /").returncode, 2)
         self.assertEqual(self.invoke(command="find / -delete").returncode, 2)
         self.assertEqual(self.invoke(command="printf harmless").returncode, 0)
+        self.assertEqual(self.invoke(command='echo "rm -rf /"').returncode, 0)
+        self.assertEqual(self.invoke(command='r=rm; $r -r -f /').returncode, 2)
+
+    def test_installed_hook_clears_selectors_before_interpreter_startup(self):
+        self.installed()
+        self.trusted_python()
+        selectors = ('DEVELOPER_DIR', 'SDKROOT', 'TOOLCHAINS', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__')
+        probe = self.home / '.pyenv/versions/fixture/bin/python3'
+        self.executable(probe, '#!/bin/sh\n' + ''.join(
+            'test -z "${' + name + '+present}" || exit 77\n' for name in selectors
+        ) + f'exec {shlex.quote(sys.executable)} "$@"\n')
+        environment = dict(self.env, **dict.fromkeys(selectors, '/nonexistent/fixture'))
+        control = subprocess.run([str(probe), '-I', '-S', '-B', '-c', 'pass'], env=environment,
+                                 capture_output=True, text=True, check=False)
+        self.assertEqual(control.returncode, 77, 'fixture detects inherited startup controls')
+        result = self.invoke(command='echo "rm -rf /"', env=environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_manifest_helper_fails_before_success_tracking(self):
         source = self.root / "source"

@@ -8,13 +8,20 @@
 # must be destroyed BEFORE the lib is sourced. Sourcing fails open (`|| true`), and if an inherited
 # CC_PYTHON survived that failure an attacker-supplied executable would become the interpreter —
 # which bypassed block-production-push.sh outright (its probe returned empty => "no push detected").
-# Clearing here, in the consumer, is what makes the handoff safe: only the lib may ever set it.
+# Clearing here makes the handoff safe: only the resolver or fixed OS fallback below may set it.
 CC_PYTHON=
+# Developer shims and CPython prefix selectors act before isolated initialization.
+unset DEVELOPER_DIR SDKROOT TOOLCHAINS PYTHONEXECUTABLE __PYVENV_LAUNCHER__
 _cc_self="${BASH_SOURCE[0]}"
 case "$_cc_self" in */*) ;; *) _cc_self="./$_cc_self" ;; esac
 _cc_pypath="${_cc_self%/*}/lib/python-path.sh"
 [ -r "$_cc_pypath" ] && . "$_cc_pypath" || true
 unset _cc_pypath _cc_self
+# This classifier uses only the standard library. A fixed OS interpreter is a
+# trusted alternative when the user's global pyenv runtime is unavailable.
+if ! [ -x "${CC_PYTHON:-}" ] && [ -x /usr/bin/python3 ]; then
+  CC_PYTHON=/usr/bin/python3
+fi
 # Claude Code PreToolUse hook — blocks destructive bash commands
 # Exit 0 = allow, exit 2 = block
 #
@@ -27,16 +34,14 @@ unset _cc_pypath _cc_self
 # Fail-safe by construction. Three outcomes from the parser:
 #   BLOCK    — a dangerous command was found in command position (or nesting exceeded the budget)
 #   ALLOW    — parsed cleanly, nothing dangerous in command position
-#   FALLBACK — could not parse (unbalanced quotes, shlex error, python3 absent); the legacy
+#   FALLBACK — could not parse (unbalanced quotes, shlex error); the legacy
 #              strip-and-match matcher decides, preserving the old over-blocking behavior
 set -euo pipefail
 
 input=$(/bin/cat)
 
 deny() {
-  /bin/cat <<HOOKEOF
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by safety hook: destructive command pattern detected"}}
-HOOKEOF
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by safety hook: destructive command pattern detected"}}'
   exit 2
 }
 
@@ -56,7 +61,7 @@ elif [ -x "${CC_PYTHON:-}" ]; then
   # jq absent but python3 (the parser's OWN dependency) is present — parse the JSON properly so an
   # ESCAPED quote in the value is not truncated. `grep -o '"command":"[^"]*"'` stopped at the first
   # \" and extracted `rm -rf \` for `rm -rf "$HOME"`, exiting 0 on a supported fallback (Codex #26 r38 F1).
-  command_str=$(printf '%s' "$input" | "$CC_PYTHON" -I -c 'import json, sys
+  command_str=$(printf '%s' "$input" | "$CC_PYTHON" -I -S -B -c 'import json, sys
 try:
     command = json.load(sys.stdin)["tool_input"]["command"]
     if not isinstance(command, str):
@@ -206,7 +211,7 @@ legacy_is_dangerous() {
         _dash="${BASH_REMATCH[1]}"; _delim="${BASH_REMATCH[2]}"     # capture BEFORE the next =~ clobbers it
         if [[ "$_line" =~ $_intro_re ]]; then _in=1; _body=""; fi
       fi
-    done <<< "$text"
+    done < <(printf '%s\n' "$text")
   fi
   # Scan the heredoc-STRIPPED text so a heredoc body that is data (to `cat`/`echo`) is not matched,
   # matching the grep above which runs on `stripped` (Codex #26 r15c).
@@ -375,19 +380,9 @@ matcher_available() {
 }
 
 if ! [ -x "${CC_PYTHON:-}" ]; then
-  matcher_available || deny
-  # find's `-delete`/`-exec` actions are PARSER-ONLY — the legacy matcher has no find model and cannot
-  # substitute a search path into the action, so `find / -delete` would exit 0 on a python-absent host
-  # (Codex #26 r63 F2). Conservatively deny a find carrying such an action alongside an absolute/home/
-  # `$PWD` search path; a purely cwd-relative find (`find . -delete`) is left to the legacy matcher.
-  # Over-blocking an ordinary absolute path is the fail-safe on the degraded path.
-  if [[ $command_str =~ (^|[^[:alnum:]./])(find|gfind)[[:space:]] ]] \
-     && [[ $command_str =~ [[:space:]](-delete|-exec|-execdir|-ok|-okdir)([[:space:]]|$) ]] \
-     && [[ $command_str =~ (^|[[:space:]])(/|~|\$\{?HOME|\$\{?PWD|\$\{?OLDPWD) ]]; then
-    deny
-  fi
-  legacy_is_dangerous "$command_str" 1 && deny   # 1 → re-scan shell-fed heredocs (no parser here)
-  exit 0
+  # Dynamic command words and assembled shell input require the full parser.
+  # The legacy matcher cannot safely substitute for an unavailable runtime.
+  deny
 fi
 
 # The parser is a sibling MODULE, not a heredoc: its source is ~67KB, which exceeds the pipe buffer,
@@ -411,7 +406,7 @@ if [[ ! -r $_parser ]]; then
   deny
 fi
 
-verdict=$(printf '%s' "$command_str" | "$CC_PYTHON" -I "$_parser" 2>/dev/null) || deny
+verdict=$(printf '%s' "$command_str" | "$CC_PYTHON" -I -S -B "$_parser" 2>/dev/null) || deny
 
 case "$verdict" in
   BLOCK) deny ;;
